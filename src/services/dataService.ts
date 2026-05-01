@@ -21,53 +21,93 @@ export function parseCSV(csv: string): ExtractedData {
   const lines = csv.split('\n').map(l => l.trim()).filter(Boolean);
   const data: ExtractedData = { teams: [], matches: [], outrights: [] };
   
-  let section: 'teams' | 'matches' | 'outrights' | null = null;
-  const foundTeamNames = new Set<string>();
+  if (lines.length === 0) return data;
 
-  for (const line of lines) {
-    if (line.toLowerCase() === '[teams]') { section = 'teams'; continue; }
-    if (line.toLowerCase() === '[matches]') { section = 'matches'; continue; }
-    if (line.toLowerCase() === '[outrights]') { section = 'outrights'; continue; }
+  // Check if it's the new flat format or the old bracketed format
+  const isBracketed = lines.some(l => l.startsWith('['));
 
-    if (!section) continue;
+  if (isBracketed) {
+    let section: 'teams' | 'matches' | 'outrights' | null = null;
+    const foundTeamIds = new Set<string>();
 
-    const parts = line.split(',').map(p => p.trim());
-    
-    if (section === 'teams' && parts.length >= 2) {
-      data.teams.push({ id: parts[0], name: parts[1] });
-      foundTeamNames.add(parts[0]); // Using ID as key
-    } else if (section === 'matches' && parts.length >= 6) {
-      const m = {
-        id: parts[0],
-        team1Id: parts[1],
-        team2Id: parts[2],
-        odds1: parseFloat(parts[3]) || 0,
-        oddsX: parseFloat(parts[4]) || 0,
-        odds2: parseFloat(parts[5]) || 0,
-        lambda1: parts[6] && parts[6] !== '' ? parseFloat(parts[6]) : undefined,
-        lambda2: parts[7] && parts[7] !== '' ? parseFloat(parts[7]) : undefined,
-        totalLine: parts[8] && parts[8] !== '' ? parseFloat(parts[8]) : undefined,
-        overOdds: parts[9] && parts[9] !== '' ? parseFloat(parts[9]) : undefined,
-        underOdds: parts[10] && parts[10] !== '' ? parseFloat(parts[10]) : undefined,
-      };
-      data.matches.push(m);
+    for (const line of lines) {
+      if (line.toLowerCase() === '[teams]') { section = 'teams'; continue; }
+      if (line.toLowerCase() === '[matches]') { section = 'matches'; continue; }
+      if (line.toLowerCase() === '[outrights]') { section = 'outrights'; continue; }
 
-      // Auto-collect team IDs from matches if not in [Teams]
-      if (!foundTeamNames.has(m.team1Id)) foundTeamNames.add(m.team1Id);
-      if (!foundTeamNames.has(m.team2Id)) foundTeamNames.add(m.team2Id);
-    } else if (section === 'outrights' && parts.length >= 2) {
-      data.outrights.push({
-        teamId: parts[0],
-        odds: parseFloat(parts[1]) || 0
+      if (!section) continue;
+
+      const parts = line.split(',').map(p => p.trim());
+      
+      if (section === 'teams' && parts.length >= 2) {
+        data.teams.push({ id: parts[0], name: parts[1] });
+        foundTeamIds.add(parts[0]);
+      } else if (section === 'matches' && parts.length >= 6) {
+        const m = {
+          id: parts[0],
+          team1Id: parts[1],
+          team2Id: parts[2],
+          odds1: parseFloat(parts[3]) || 0,
+          oddsX: parseFloat(parts[4]) || 0,
+          odds2: parseFloat(parts[5]) || 0,
+          lambda1: parts[6] && parts[6] !== '' ? parseFloat(parts[6]) : undefined,
+          lambda2: parts[7] && parts[7] !== '' ? parseFloat(parts[7]) : undefined,
+          totalLine: parts[8] && parts[8] !== '' ? parseFloat(parts[8]) : undefined,
+          overOdds: parts[9] && parts[9] !== '' ? parseFloat(parts[9]) : undefined,
+          underOdds: parts[10] && parts[10] !== '' ? parseFloat(parts[10]) : undefined,
+        };
+        data.matches.push(m);
+        if (!foundTeamIds.has(m.team1Id)) foundTeamIds.add(m.team1Id);
+        if (!foundTeamIds.has(m.team2Id)) foundTeamIds.add(m.team2Id);
+      } else if (section === 'outrights' && parts.length >= 2) {
+        data.outrights.push({
+          teamId: parts[0],
+          odds: parseFloat(parts[1]) || 0
+        });
+      }
+    }
+
+    // Auto-create teams if missing
+    if (data.teams.length === 0 && foundTeamIds.size > 0) {
+      foundTeamIds.forEach(id => data.teams.push({ id, name: id }));
+    }
+  } else {
+    // New Flat Format: home, away, 1, X, 2, value, under, over
+    const teamNameMap = new Map<string, string>();
+    const getTeamId = (name: string) => {
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      if (!teamNameMap.has(slug)) {
+        teamNameMap.set(slug, name);
+        data.teams.push({ id: slug, name });
+      }
+      return slug;
+    };
+
+    // Skip header if present
+    const startIndex = (lines[0].toLowerCase().includes('home') || lines[0].toLowerCase().includes('away')) ? 1 : 0;
+
+    for (let i = startIndex; i < lines.length; i++) {
+      // Split by tab or comma
+      const parts = lines[i].split(/[,\t]/).map(p => p.trim());
+      if (parts.length < 5) continue; // Need at least home, away, 1, X, 2
+
+      const homeName = parts[0];
+      const awayName = parts[1];
+      const t1Id = getTeamId(homeName);
+      const t2Id = getTeamId(awayName);
+
+      data.matches.push({
+        id: `m${i}`,
+        team1Id: t1Id,
+        team2Id: t2Id,
+        odds1: parseFloat(parts[2]) || 0,
+        oddsX: parseFloat(parts[3]) || 0,
+        odds2: parseFloat(parts[4]) || 0,
+        totalLine: parts[5] ? parseFloat(parts[5]) : 2.5,
+        underOdds: parts[6] ? parseFloat(parts[6]) : undefined,
+        overOdds: parts[7] ? parseFloat(parts[7]) : undefined,
       });
     }
-  }
-
-  // If Teams section was missing, create placeholder teams from the matches
-  if (data.teams.length === 0 && foundTeamNames.size > 0) {
-    foundTeamNames.forEach(id => {
-      data.teams.push({ id, name: id });
-    });
   }
 
   // Ensure every team has an entry in Outrights

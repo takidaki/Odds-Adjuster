@@ -18,7 +18,9 @@ import {
   FileUp,
   Image as ImageIcon,
   Loader2,
-  Download
+  Download,
+  Lock,
+  LockOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -141,6 +143,10 @@ export default function App() {
 
   const removeMatch = (id: string) => {
     setMatches(prev => prev.filter(m => m.id !== id));
+  };
+
+  const toggleLock = (id: string) => {
+    setMatches(prev => prev.map(m => m.id === id ? { ...m, locked: !m.locked } : m));
   };
 
   const addTeam = () => {
@@ -288,25 +294,13 @@ export default function App() {
   };
 
   const getCsvTemplate = () => {
-    return `[Teams]
-t1,Mexico
-t2,South Africa
-t3,South Korea
-t4,Czech Republic
-
-[Matches]
-m1,t1,t2,1.5,4.0,5.5,,,2.5,1.9,1.98
-m2,t3,t4,2.55,3.2,2.6,,,2.5,1.66,2.21
-m3,t4,t2,2.05,3.25,3.7,,,2.5,1.5,2.5
-m4,t1,t3,1.91,3.55,4.0,,,2.5,1.6,2.35
-m5,t4,t1,3.9,3.7,1.9,,,2.5,1.65,2.2
-m6,t2,t3,3.7,3.25,2.05,,,2.5,1.6,2.25
-
-[Outrights]
-t1,1.95
-t2,10.5
-t3,4.8
-t4,4.2`;
+    return `home,away,1,X,2,value,under,over
+Canada,Bosnia & Herzegovina,1.83,3.7,3.6,2.5,1.7,2.1
+Qatar,Switzerland,9.0,5.25,1.27,2.5,2.2,1.65
+Switzerland,Bosnia & Herzegovina,1.61,3.6,5.6,2.5,1.85,1.95
+Canada,Qatar,1.68,3.95,5.7,2.5,1.9,1.9
+Bosnia & Herzegovina,Qatar,1.8,3.6,4.2,2.5,1.6,2.3
+Switzerland,Canada,2.2,3.3,3.2,2.5,1.65,2.2`;
   };
 
   const getTeamName = (id: string) => teams.find(t => t.id === id)?.name || 'Unknown';
@@ -388,7 +382,7 @@ t4,4.2`;
                 <textarea 
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
-                  placeholder="[Teams]\nt1,Team Name\n...\n[Matches]\n..."
+                  placeholder="home, away, 1, X, 2, value, under, over..."
                   className="w-full h-40 bg-[#F5F5F3] border border-[#141414]/10 p-3 font-mono text-[10px] focus:outline-none focus:border-[#141414] transition-all resize-none"
                 />
                 <div className="flex gap-2">
@@ -436,7 +430,7 @@ t4,4.2`;
                 </div>
                 <div className="p-3 bg-blue-50 border border-blue-100 rounded text-[9px] leading-tight text-blue-800 font-mono">
                   <p className="font-bold mb-1 uppercase tracking-tighter">Pro Tip:</p>
-                  Upload a screenshot of your match spreadsheet or bookmaker table. Gemini will attempt to parse teams, odds, and expected goals automatically.
+                  You can paste a table directly from Excel or Google Sheets. The required columns are: Home, Away, 1, X, 2, Totals Value, Under Odds, Over Odds.
                 </div>
               </div>
             </div>
@@ -595,12 +589,24 @@ t4,4.2`;
                             >
                               {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
-                            <button 
-                              onClick={() => removeMatch(m.id)}
-                              className="invisible group-hover:visible ml-auto text-red-400 hover:text-red-700"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                            <div className="flex gap-1 ml-auto">
+                              <button 
+                                onClick={() => toggleLock(m.id)}
+                                title={m.locked ? "Unlock Odds" : "Lock Odds (ignore in alignment)"}
+                                className={cn(
+                                  "p-1 rounded transition-colors",
+                                  m.locked ? "text-amber-600 bg-amber-100" : "text-slate-400 hover:text-slate-600"
+                                )}
+                              >
+                                {m.locked ? <Lock className="w-3 h-3" /> : <LockOpen className="w-3 h-3" />}
+                              </button>
+                              <button 
+                                onClick={() => removeMatch(m.id)}
+                                className="invisible group-hover:visible text-red-400 hover:text-red-700"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </div>
                           <span className="text-[9px] opacity-20 truncate uppercase select-none">Fixture ID: {m.id}</span>
                         </div>
@@ -701,24 +707,27 @@ t4,4.2`;
                       <td className="p-3">
                         <div className="grid grid-cols-3 gap-1">
                           <div className={cn(
-                            "p-1.5 text-center border font-bold transition-all shadow-sm text-[10px] flex flex-col items-center",
+                            "p-1.5 text-center border font-bold transition-all shadow-sm text-[10px] flex flex-col items-center relative",
                             adj ? (adj.adj1! < m.odds1 ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700") : "bg-slate-50 border-black/5 opacity-30"
                           )}>
+                            {m.locked && <Lock className="w-2 h-2 absolute top-0.5 right-0.5 opacity-40 text-amber-600" />}
                             <span>{adj?.adj1 || '-'}</span>
                             {adj?.adjLambda1 !== undefined && (
                               <span className="text-[7px] opacity-40 uppercase tracking-tighter mt-0.5">λ:{adj.adjLambda1}</span>
                             )}
                           </div>
                           <div className={cn(
-                            "p-1.5 text-center border font-bold transition-all shadow-sm text-[10px] flex flex-col justify-center",
+                            "p-1.5 text-center border font-bold transition-all shadow-sm text-[10px] flex flex-col justify-center relative",
                             adj ? "bg-white border-black/10" : "bg-slate-50 border-black/5 opacity-30"
                           )}>
+                            {m.locked && <Lock className="w-2 h-2 absolute top-0.5 right-0.5 opacity-40 text-amber-600" />}
                             {adj?.adjX || '-'}
                           </div>
                           <div className={cn(
-                            "p-1.5 text-center border font-bold transition-all shadow-sm text-[10px] flex flex-col items-center",
+                            "p-1.5 text-center border font-bold transition-all shadow-sm text-[10px] flex flex-col items-center relative",
                             adj ? (adj.adj2! < m.odds2 ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700") : "bg-slate-50 border-black/5 opacity-30"
                           )}>
+                            {m.locked && <Lock className="w-2 h-2 absolute top-0.5 right-0.5 opacity-40 text-amber-600" />}
                             <span>{adj?.adj2 || '-'}</span>
                             {adj?.adjLambda2 !== undefined && (
                               <span className="text-[7px] opacity-40 uppercase tracking-tighter mt-0.5">λ:{adj.adjLambda2}</span>

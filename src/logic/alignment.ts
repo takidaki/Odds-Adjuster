@@ -16,6 +16,7 @@ export interface Match {
   underOdds?: number;
   lambda1?: number; // Expected goals for team 1
   lambda2?: number; // Expected goals for team 2
+  locked?: boolean; // If true, odds are locked and not adjusted by alignment
   adjLambda1?: number; // Aligned expected goals for team 1
   adjLambda2?: number; // Aligned expected goals for team 2
   // Adjusted "Fair" odds (no vig) after iteration
@@ -210,6 +211,11 @@ export function calculateOutrights(teams: Team[], matches: Match[], multipliers:
     }
 
     const [p1, pX, p2] = baseProbs;
+
+    if (m.locked) {
+      return [p1, pX, p2];
+    }
+
     // Apply multipliers: Strength of team 1 vs team 2
     // We adjust win/loss relative to draw.
     const m1 = multipliers[m.team1Id] || 1;
@@ -332,6 +338,19 @@ export function alignOdds(teams: Team[], matches: Match[], outrights: Outright[]
     }
 
     const [p1, pX, p2] = baseProbs;
+    
+    if (m.locked) {
+      return {
+        ...m,
+        fair1: Number((1/p1).toFixed(3)),
+        fairX: Number((1/pX).toFixed(3)),
+        fair2: Number((1/p2).toFixed(3)),
+        adj1: Number(m.odds1.toFixed(3)),
+        adjX: Number(m.oddsX.toFixed(3)),
+        adj2: Number(m.odds2.toFixed(3)),
+      };
+    }
+
     const m1 = multipliers[m.team1Id] || 1;
     const m2 = multipliers[m.team2Id] || 1;
 
